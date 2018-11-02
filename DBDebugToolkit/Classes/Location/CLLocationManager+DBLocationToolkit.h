@@ -22,6 +22,8 @@
 
 #import <CoreLocation/CoreLocation.h>
 
+extern NSString *const CLLocationManagerUpdateKey;
+
 /**
  `CLLocationManager` category that replaces private methods to simulate location.
  */

@@ -26,6 +26,8 @@
 #import <objc/runtime.h>
 
 static NSString *const CLLocationManagerLocationsKey = @"Locations";
+NSString *const CLLocationManagerUpdateKey = @"LocationUpdate";
+
 
 @implementation CLLocationManager (DBLocationToolkit)
 
@@ -40,14 +42,25 @@ static NSString *const CLLocationManagerLocationsKey = @"Locations";
         key = [[NSString alloc] initWithData:[NSData dataWithBytes:(unsigned char []){0x6f, 0x6e, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x45, 0x76, 0x65, 0x6e, 0x74, 0x4c, 0x6f, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x3a, 0x66, 0x6f, 0x72, 0x63, 0x65, 0x4d, 0x61, 0x70, 0x4d, 0x61, 0x74, 0x63, 0x68, 0x69, 0x6e, 0x67, 0x3a, 0x74, 0x79, 0x70, 0x65, 0x3a} length:44] encoding:NSASCIIStringEncoding];
         [self exchangeInstanceMethodsWithOriginalSelector:NSSelectorFromString(key)
                                       andSwizzledSelector:@selector(db_onClientEventLocation:forceMapMatching:type:)];
+        // Making sure to minimize the risk of rejecting app because of the private API.
+        key = @"startUpdatingLocation";
+        [self exchangeInstanceMethodsWithOriginalSelector:NSSelectorFromString(key)
+                                      andSwizzledSelector:@selector(db_startUpdatingLocation)];
     });
+}
+
+-(void)db_startUpdatingLocation {
+    [self addLocationObserver];
+    [self db_startUpdatingLocation];
 }
 
 - (void)db_onClientEventLocation:(NSDictionary *)dictionary {
     if ([DBLocationToolkit sharedInstance].simulatedLocation == nil) {
         [self db_onClientEventLocation:dictionary];
     } else {
-        [self.delegate locationManager:self didUpdateLocations:@[[DBLocationToolkit sharedInstance].simulatedLocation]];
+        DBPresetLocation *dbLocation = [[DBLocationToolkit sharedInstance].simulatedLocation firstObject];
+        CLLocation *location = [[CLLocation alloc] initWithLatitude:dbLocation.latitude longitude:dbLocation.longitude];
+        [self.delegate locationManager:self didUpdateLocations:@[location]];
     }
 }
 
@@ -55,8 +68,32 @@ static NSString *const CLLocationManagerLocationsKey = @"Locations";
     if ([DBLocationToolkit sharedInstance].simulatedLocation == nil) {
         [self db_onClientEventLocation:dictionary forceMapMatching:forceMapMatching type:type];
     } else {
-        [self.delegate locationManager:self didUpdateLocations:@[[DBLocationToolkit sharedInstance].simulatedLocation]];
+        DBPresetLocation *dbLocation = [[DBLocationToolkit sharedInstance].simulatedLocation firstObject];
+        CLLocation *location = [[CLLocation alloc] initWithLatitude:dbLocation.latitude longitude:dbLocation.longitude];
+        [self.delegate locationManager:self didUpdateLocations:@[location]];
     }
+}
+
+#pragma mark -  location trip code
+
+-(void)addLocationObserver {
+    [self removeLocationObserver];
+    [[NSNotificationCenter defaultCenter] addObserverForName:CLLocationManagerUpdateKey
+                                                      object:nil queue:[NSOperationQueue mainQueue]
+                                                  usingBlock:^(NSNotification * _Nonnull note) {
+                                                      [self performSelector:@selector(updateLocation)];
+                                                  }];
+}
+
+-(void)removeLocationObserver {
+    [[NSNotificationCenter defaultCenter]removeObserver:self];
+}
+
+-(void)updateLocation
+{
+    DBPresetLocation *dbLocation = [[DBLocationToolkit sharedInstance].simulatedLocation firstObject];
+    CLLocation *location = [[CLLocation alloc] initWithLatitude:dbLocation.latitude longitude:dbLocation.longitude];
+    [self.delegate locationManager:self didUpdateLocations:@[location]];
 }
 
 @end
